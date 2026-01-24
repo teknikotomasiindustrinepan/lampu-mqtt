@@ -2,7 +2,10 @@
 <html lang="id">
 <head>
   <meta charset="UTF-8">
-  <title>Lampu Virtual</title>
+  <title>Lampu Virtual MQTT</title>
+
+  <!-- MQTT.js -->
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
 
   <style>
     body {
@@ -15,6 +18,7 @@
       padding: 12px 24px;
       font-size: 16px;
       margin: 10px;
+      cursor: pointer;
     }
 
     .lampu {
@@ -38,25 +42,52 @@
 </head>
 <body>
 
-  <h2>Lampu Virtual</h2>
-  <p>Versi lokal (tanpa MQTT)</p>
+  <h2>Kontrol Lampu Virtual</h2>
+  <p>Website → MQTT → Node-RED → MQTT → Website</p>
 
   <button onclick="lampuOn()">Lampu ON</button>
   <button onclick="lampuOff()">Lampu OFF</button>
 
   <div id="lampu" class="lampu off"></div>
 
-  <p>Status: <strong id="statusText">OFF</strong></p>
+  <p>Status: <strong id="statusText">MENUNGGU...</strong></p>
 
   <script>
+    // Koneksi ke HiveMQ WebSocket
+    const client = mqtt.connect("wss://broker.hivemq.com:8884/mqtt");
+
+    client.on("connect", () => {
+      console.log("MQTT Connected");
+      client.subscribe("smk/japara/lab1/status/lampu");
+    });
+
+    client.on("message", (topic, message) => {
+      const data = JSON.parse(message.toString());
+
+      const lampu = document.getElementById("lampu");
+      const statusText = document.getElementById("statusText");
+
+      if (data.status === "ON") {
+        lampu.className = "lampu on";
+        statusText.innerText = "ON";
+      } else if (data.status === "OFF") {
+        lampu.className = "lampu off";
+        statusText.innerText = "OFF";
+      }
+    });
+
     function lampuOn() {
-      document.getElementById("lampu").className = "lampu on";
-      document.getElementById("statusText").innerText = "ON";
+      client.publish(
+        "smk/japara/lab1/cmd/lampu",
+        JSON.stringify({ command: "ON" })
+      );
     }
 
     function lampuOff() {
-      document.getElementById("lampu").className = "lampu off";
-      document.getElementById("statusText").innerText = "OFF";
+      client.publish(
+        "smk/japara/lab1/cmd/lampu",
+        JSON.stringify({ command: "OFF" })
+      );
     }
   </script>
 
