@@ -1,10 +1,64 @@
 <!DOCTYPE html>
-<html>
+<html lang="id">
 <head>
-  <title>Website Pertama Saya</title>
+  <meta charset="UTF-8">
+  <title>Lampu Virtual</title>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      margin-top: 40px;
+    }
+
+    button {
+      padding: 12px 24px;
+      font-size: 16px;
+      margin: 10px;
+    }
+
+    .lampu {
+      width: 120px;
+      height: 120px;
+      border-radius: 50%;
+      margin: 30px auto;
+      background-color: gray;
+      box-shadow: 0 0 10px #999;
+    }
+
+    .on {
+      background-color: yellow;
+      box-shadow: 0 0 30px gold;
+    }
+
+    .off {
+      background-color: gray;
+    }
+  </style>
 </head>
 <body>
-  <h1>Halo, Website GitHub Pages Saya Jalan!</h1>
-  <p>Ini dibuat dari GitHub Pages.</p>
+
+  <h2>Lampu Virtual</h2>
+  <p>Versi lokal (tanpa MQTT)</p>
+
+  <button onclick="lampuOn()">Lampu ON</button>
+  <button onclick="lampuOff()">Lampu OFF</button>
+
+  <div id="lampu" class="lampu off"></div>
+
+  <p>Status: <strong id="statusText">OFF</strong></p>
+
+  <script>
+    function lampuOn() {
+      document.getElementById("lampu").className = "lampu on";
+      document.getElementById("statusText").innerText = "ON";
+    }
+
+    function lampuOff() {
+      document.getElementById("lampu").className = "lampu off";
+      document.getElementById("statusText").innerText = "OFF";
+    }
+  </script>
+
 </body>
 </html>
