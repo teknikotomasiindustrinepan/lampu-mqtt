@@ -1,39 +1,98 @@
 <!DOCTYPE html>
-<html>
+<html lang="id">
 <head>
   <meta charset="UTF-8">
-  <title>Grafik Lampu MQTT</title>
+  <title>Lampu Virtual + Grafik MQTT</title>
 
-  <!-- MQTT -->
+  <!-- MQTT.js -->
   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
 
-  <!-- Chart -->
+  <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      margin-top: 30px;
+    }
+
+    button {
+      padding: 12px 24px;
+      font-size: 16px;
+      margin: 10px;
+      cursor: pointer;
+    }
+
+    .lampu {
+      width: 120px;
+      height: 120px;
+      border-radius: 50%;
+      margin: 20px auto;
+      background-color: gray;
+      box-shadow: 0 0 10px #999;
+    }
+
+    .on {
+      background-color: yellow;
+      box-shadow: 0 0 30px gold;
+    }
+
+    .off {
+      background-color: gray;
+    }
+
+    canvas {
+      max-width: 600px;
+      margin: 30px auto;
+    }
+  </style>
 </head>
 
 <body>
 
-<h2>Grafik Status Lampu</h2>
+<h2>Kontrol Lampu Virtual</h2>
+<p>Website ⇄ MQTT ⇄ Node-RED</p>
 
-<canvas id="lampuChart" width="400" height="200"></canvas>
+<button onclick="lampuOn()">Lampu ON</button>
+<button onclick="lampuOff()">Lampu OFF</button>
+
+<div id="lampu" class="lampu off"></div>
+<p>Status: <strong id="statusText">MENUNGGU...</strong></p>
+
+<hr>
+
+<h2>Grafik Riwayat Lampu</h2>
+<canvas id="lampuChart" height="200"></canvas>
 
 <script>
-  // Koneksi MQTT
-  const client = mqtt.connect('wss://broker.hivemq.com:8884/mqtt');
+  // ===== MQTT SETUP =====
+  const client = mqtt.connect("wss://broker.hivemq.com:8884/mqtt");
 
-  const TOPIC_HISTORY = 'smk/japara/lampu/history';
+  const TOPIC_CMD     = "smk/japara/lab1/cmd/lampu";
+  const TOPIC_STATUS  = "smk/japara/lab1/status/lampu";
+  const TOPIC_HISTORY = "smk/japara/lampu/history";
 
-  // Data grafik
+  client.on("connect", () => {
+    console.log("MQTT Connected");
+    client.subscribe([TOPIC_STATUS, TOPIC_HISTORY]);
+  });
+
+  // ===== LAMPU REALTIME =====
+  const lampu = document.getElementById("lampu");
+  const statusText = document.getElementById("statusText");
+
+  // ===== GRAFIK =====
   const labels = [];
   const dataValues = [];
 
-  const ctx = document.getElementById('lampuChart').getContext('2d');
+  const ctx = document.getElementById("lampuChart").getContext("2d");
   const chart = new Chart(ctx, {
-    type: 'line',
+    type: "line",
     data: {
       labels: labels,
       datasets: [{
-        label: 'Lampu (ON=1, OFF=0)',
+        label: "Lampu (ON=1, OFF=0)",
         data: dataValues,
         borderWidth: 2,
         stepped: true
@@ -46,18 +105,30 @@
           max: 1,
           ticks: {
             stepSize: 1,
-            callback: v => v === 1 ? 'ON' : 'OFF'
+            callback: v => v === 1 ? "ON" : "OFF"
           }
         }
       }
     }
   });
 
-  client.on('connect', () => {
-    client.subscribe(TOPIC_HISTORY);
-  });
+  // ===== MQTT MESSAGE HANDLER =====
+  client.on("message", (topic, message) => {
 
-  client.on('message', (topic, message) => {
+    // STATUS REALTIME
+    if (topic === TOPIC_STATUS) {
+      const data = JSON.parse(message.toString());
+
+      if (data.status === "ON") {
+        lampu.className = "lampu on";
+        statusText.innerText = "ON";
+      } else if (data.status === "OFF") {
+        lampu.className = "lampu off";
+        statusText.innerText = "OFF";
+      }
+    }
+
+    // HISTORY GRAFIK
     if (topic === TOPIC_HISTORY) {
       const history = JSON.parse(message.toString());
 
@@ -72,6 +143,15 @@
       chart.update();
     }
   });
+
+  // ===== BUTTON =====
+  function lampuOn() {
+    client.publish(TOPIC_CMD, JSON.stringify({ command: "ON" }));
+  }
+
+  function lampuOff() {
+    client.publish(TOPIC_CMD, JSON.stringify({ command: "OFF" }));
+  }
 </script>
 
 </body>
