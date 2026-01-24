@@ -1,95 +1,78 @@
 <!DOCTYPE html>
-<html lang="id">
+<html>
 <head>
   <meta charset="UTF-8">
-  <title>Lampu Virtual MQTT</title>
+  <title>Grafik Lampu MQTT</title>
 
-  <!-- MQTT.js -->
+  <!-- MQTT -->
   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
 
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      text-align: center;
-      margin-top: 40px;
-    }
-
-    button {
-      padding: 12px 24px;
-      font-size: 16px;
-      margin: 10px;
-      cursor: pointer;
-    }
-
-    .lampu {
-      width: 120px;
-      height: 120px;
-      border-radius: 50%;
-      margin: 30px auto;
-      background-color: gray;
-      box-shadow: 0 0 10px #999;
-    }
-
-    .on {
-      background-color: yellow;
-      box-shadow: 0 0 30px gold;
-    }
-
-    .off {
-      background-color: gray;
-    }
-  </style>
+  <!-- Chart -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
+
 <body>
 
-  <h2>Kontrol Lampu Virtual</h2>
-  <p>Website → MQTT → Node-RED → MQTT → Website</p>
+<h2>Grafik Status Lampu</h2>
 
-  <button onclick="lampuOn()">Lampu ON</button>
-  <button onclick="lampuOff()">Lampu OFF</button>
+<canvas id="lampuChart" width="400" height="200"></canvas>
 
-  <div id="lampu" class="lampu off"></div>
+<script>
+  // Koneksi MQTT
+  const client = mqtt.connect('wss://broker.hivemq.com:8884/mqtt');
 
-  <p>Status: <strong id="statusText">MENUNGGU...</strong></p>
+  const TOPIC_HISTORY = 'smk/japara/lampu/history';
 
-  <script>
-    // Koneksi ke HiveMQ WebSocket
-    const client = mqtt.connect("wss://broker.hivemq.com:8884/mqtt");
+  // Data grafik
+  const labels = [];
+  const dataValues = [];
 
-    client.on("connect", () => {
-      console.log("MQTT Connected");
-      client.subscribe("smk/japara/lab1/status/lampu");
-    });
-
-    client.on("message", (topic, message) => {
-      const data = JSON.parse(message.toString());
-
-      const lampu = document.getElementById("lampu");
-      const statusText = document.getElementById("statusText");
-
-      if (data.status === "ON") {
-        lampu.className = "lampu on";
-        statusText.innerText = "ON";
-      } else if (data.status === "OFF") {
-        lampu.className = "lampu off";
-        statusText.innerText = "OFF";
+  const ctx = document.getElementById('lampuChart').getContext('2d');
+  const chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: 'Lampu (ON=1, OFF=0)',
+        data: dataValues,
+        borderWidth: 2,
+        stepped: true
+      }]
+    },
+    options: {
+      scales: {
+        y: {
+          min: 0,
+          max: 1,
+          ticks: {
+            stepSize: 1,
+            callback: v => v === 1 ? 'ON' : 'OFF'
+          }
+        }
       }
-    });
-
-    function lampuOn() {
-      client.publish(
-        "smk/japara/lab1/cmd/lampu",
-        JSON.stringify({ command: "ON" })
-      );
     }
+  });
 
-    function lampuOff() {
-      client.publish(
-        "smk/japara/lab1/cmd/lampu",
-        JSON.stringify({ command: "OFF" })
-      );
+  client.on('connect', () => {
+    client.subscribe(TOPIC_HISTORY);
+  });
+
+  client.on('message', (topic, message) => {
+    if (topic === TOPIC_HISTORY) {
+      const history = JSON.parse(message.toString());
+
+      labels.length = 0;
+      dataValues.length = 0;
+
+      history.forEach(item => {
+        labels.push(item.time.substring(11,19));
+        dataValues.push(item.value);
+      });
+
+      chart.update();
     }
-  </script>
+  });
+</script>
 
 </body>
 </html>
