@@ -14,12 +14,18 @@
     import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
     import { getFirestore, doc, setDoc, onSnapshot, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-    // Inisialisasi Firebase
-    const firebaseConfig = JSON.parse(__firebase_config);
+    // PENTING: Jika dipindahkan ke file lokal, ganti variabel ini dengan string config dari Firebase Console Anda
+    // Contoh: const firebaseConfig = { apiKey: "...", authDomain: "...", ... };
+    const firebaseConfig = typeof __firebase_config !== 'undefined' 
+      ? JSON.parse(__firebase_config) 
+      : { /* PASTE CONFIG FIREBASE ANDA DI SINI */ };
+
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
     const db = getFirestore(app);
-    const appId = typeof __app_id !== 'undefined' ? __app_id : 'smart-lamp-agriot';
+    
+    // PENTING: Ganti dengan ID unik project Anda jika di luar Canvas
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'smart-lamp-agriot-local';
 
     // Konfigurasi MQTT
     const TOPIC_STATUS = "lampu/esp32_01/status";
@@ -117,7 +123,6 @@
         }
       } catch (error) {
         console.error("Auth Error:", error);
-        // Jika gagal auth, paksa UI keluar dari mode syncing agar bisa dikontrol manual
         if (!isSynced) updateUI("OFF");
       }
     };
@@ -126,9 +131,9 @@
     onAuthStateChanged(auth, (user) => {
       currentUser = user;
       if (user) {
+        // Path Firestore yang Anda minta
         const statusDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'lamp_status', 'latest');
         
-        // Listener Firestore
         onSnapshot(statusDocRef, (docSnap) => {
           if (docSnap.exists()) {
             const data = docSnap.data();
@@ -138,7 +143,6 @@
                 updateUI(data.status);
             }
           } else {
-            // Jika dokumen belum ada di Firebase, jangan biarkan stuck di "Syncing"
             if (!isSynced) {
                 isSynced = true;
                 updateUI("OFF");
@@ -149,7 +153,6 @@
           if (!isSynced) updateUI("OFF");
         });
 
-        // Timeout 5 detik: Jika Firebase tidak merespon, paksa UI aktif
         setTimeout(() => {
             if (!isSynced) {
                 isSynced = true;
@@ -187,14 +190,12 @@
     client.on("message", async (topic, message) => {
       const msg = message.toString().trim().toUpperCase();
       if (topic === TOPIC_STATUS) {
-        // Jika pesan MQTT datang, prioritaskan UI
         if (!isSynced || msg !== lastStatus) {
             isSynced = true;
             lastStatus = msg;
             updateUI(msg);
         }
 
-        // Simpan ke Firebase
         if (currentUser) {
           const statusDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'lamp_status', 'latest');
           try {
