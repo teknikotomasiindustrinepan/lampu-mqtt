@@ -12,7 +12,7 @@
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
     import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-    import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+    import { getFirestore, doc, setDoc, onSnapshot, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
     // Inisialisasi Firebase
     const firebaseConfig = JSON.parse(__firebase_config);
@@ -91,8 +91,10 @@
     }
 
     function updateUI(status) {
-      const finalStatus = (status.includes("ON")) ? "ON" : "OFF";
+      const finalStatus = (status && status.includes("ON")) ? "ON" : "OFF";
       statusText.innerText = finalStatus;
+      statusText.classList.remove("sync-pulse");
+      
       if (finalStatus === "ON") {
         statusText.classList.remove("text-white/20");
         statusText.classList.add("text-amber-400", "drop-shadow-[0_0_12px_rgba(251,191,36,0.6)]");
@@ -105,7 +107,7 @@
       addDataToChart(finalStatus);
     }
 
-    // 1. Inisialisasi Auth (WAJIB)
+    // 1. Inisialisasi Auth
     const initAuth = async () => {
       try {
         if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
@@ -115,6 +117,8 @@
         }
       } catch (error) {
         console.error("Auth Error:", error);
+        // Jika gagal auth, paksa UI keluar dari mode syncing agar bisa dikontrol manual
+        if (!isSynced) updateUI("OFF");
       }
     };
     initAuth();
@@ -122,22 +126,36 @@
     onAuthStateChanged(auth, (user) => {
       currentUser = user;
       if (user) {
-        // 2. Ambil data terakhir dari Firebase (Path Sesuai Instruksi Anda)
         const statusDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'lamp_status', 'latest');
         
+        // Listener Firestore
         onSnapshot(statusDocRef, (docSnap) => {
           if (docSnap.exists()) {
             const data = docSnap.data();
-            if (!isSynced) {
-                statusText.classList.remove("sync-pulse");
-                isSynced = true;
-            }
+            isSynced = true;
             if (data.status !== lastStatus) {
                 lastStatus = data.status;
                 updateUI(data.status);
             }
+          } else {
+            // Jika dokumen belum ada di Firebase, jangan biarkan stuck di "Syncing"
+            if (!isSynced) {
+                isSynced = true;
+                updateUI("OFF");
+            }
           }
-        }, (error) => console.error("Firestore Listen Error:", error));
+        }, (error) => {
+          console.error("Firestore Error:", error);
+          if (!isSynced) updateUI("OFF");
+        });
+
+        // Timeout 5 detik: Jika Firebase tidak merespon, paksa UI aktif
+        setTimeout(() => {
+            if (!isSynced) {
+                isSynced = true;
+                updateUI("OFF");
+            }
+        }, 5000);
       }
     });
 
@@ -146,7 +164,8 @@
         username: "mqtt_user", 
         password: "mqtt_pass", 
         protocol: "wss",
-        clientId: 'web_client_' + Math.random().toString(16).substr(2, 8)
+        clientId: 'web_client_' + Math.random().toString(16).substr(2, 8),
+        connectTimeout: 10000
     };
     const client = mqtt.connect("wss://broker.hivemq.com:8884/mqtt", mqttOptions);
 
@@ -160,27 +179,46 @@
       client.publish(TOPIC_CMD, "GET_STATUS", { qos: 1 });
     });
 
+    client.on("error", (err) => {
+        console.error("MQTT Connection Error:", err);
+        mqttText.innerText = "MQTT Error";
+    });
+
     client.on("message", async (topic, message) => {
       const msg = message.toString().trim().toUpperCase();
       if (topic === TOPIC_STATUS) {
-        // 4. Cara Menambahkan Data ke Firebase (setDoc)
+        // Jika pesan MQTT datang, prioritaskan UI
+        if (!isSynced || msg !== lastStatus) {
+            isSynced = true;
+            lastStatus = msg;
+            updateUI(msg);
+        }
+
+        // Simpan ke Firebase
         if (currentUser) {
-          // Mendefinisikan lokasi penyimpanan (Path Anda)
           const statusDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'lamp_status', 'latest');
-          
-          // Mengirim data ke Firestore
-          await setDoc(statusDocRef, { 
-            status: msg, 
-            updatedAt: new Date().toISOString(),
-            deviceId: "ESP32_01"
-          }, { merge: true }); // 'merge: true' agar tidak menimpa field lain jika ada
+          try {
+            await setDoc(statusDocRef, { 
+                status: msg, 
+                updatedAt: new Date().toISOString(),
+                deviceId: "ESP32_01"
+            }, { merge: true });
+          } catch (e) {
+            console.error("Gagal simpan ke Firebase:", e);
+          }
         }
       }
     });
 
     // Actions
-    window.lampOn = () => client.publish(TOPIC_CMD, "ON", { qos: 1 });
-    window.lampOff = () => client.publish(TOPIC_CMD, "OFF", { qos: 1 });
+    window.lampOn = () => {
+        if (client.connected) client.publish(TOPIC_CMD, "ON", { qos: 1 });
+        else console.warn("MQTT tidak terhubung");
+    };
+    window.lampOff = () => {
+        if (client.connected) client.publish(TOPIC_CMD, "OFF", { qos: 1 });
+        else console.warn("MQTT tidak terhubung");
+    };
     window.handleLogout = () => {
       document.body.classList.add("fade-out");
       setTimeout(() => {
