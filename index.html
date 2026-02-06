@@ -11,23 +11,33 @@
   <!-- Firebase SDK -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-    import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
     import { getFirestore, doc, setDoc, onSnapshot, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-    // PENTING: Jika dipindahkan ke file lokal, ganti variabel ini dengan string config dari Firebase Console Anda
-    // Contoh: const firebaseConfig = { apiKey: "...", authDomain: "...", ... };
+    /**
+     * KONFIGURASI FIREBASE UNTUK: agriot-classy-japara
+     * Pastikan Anda menyalin API KEY asli dari Firebase Console (Project Settings).
+     */
+    const myLocalConfig = {
+      apiKey: "AIzaSy...", // GANTI DENGAN API KEY ASLI ANDA
+      authDomain: "agriot-classy-japara.firebaseapp.com",
+      projectId: "agriot-classy-japara",
+      storageBucket: "agriot-classy-japara.appspot.com",
+      messagingSenderId: "GANTI_SENDER_ID",
+      appId: "GANTI_APP_ID"
+    };
+
     const firebaseConfig = typeof __firebase_config !== 'undefined' 
       ? JSON.parse(__firebase_config) 
-      : { /* PASTE CONFIG FIREBASE ANDA DI SINI */ };
+      : myLocalConfig;
 
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
     const db = getFirestore(app);
     
-    // PENTING: Ganti dengan ID unik project Anda jika di luar Canvas
-    const appId = typeof __app_id !== 'undefined' ? __app_id : 'smart-lamp-agriot-local';
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'agriot-classy-japara';
 
-    // Konfigurasi MQTT
+    // Konfigurasi MQTT & Redirect
     const TOPIC_STATUS = "lampu/esp32_01/status";
     const TOPIC_CMD = "lampu/esp32_01/cmd";
     const REDIRECT_URL = "https://teknikotomasiindustrinepan.github.io/agriot_classy/";
@@ -123,7 +133,7 @@
         }
       } catch (error) {
         console.error("Auth Error:", error);
-        if (!isSynced) updateUI("OFF");
+        if (!isSynced) { isSynced = true; updateUI("OFF"); }
       }
     };
     initAuth();
@@ -131,9 +141,7 @@
     onAuthStateChanged(auth, (user) => {
       currentUser = user;
       if (user) {
-        // Path Firestore yang Anda minta
         const statusDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'lamp_status', 'latest');
-        
         onSnapshot(statusDocRef, (docSnap) => {
           if (docSnap.exists()) {
             const data = docSnap.data();
@@ -142,49 +150,39 @@
                 lastStatus = data.status;
                 updateUI(data.status);
             }
-          } else {
-            if (!isSynced) {
-                isSynced = true;
-                updateUI("OFF");
-            }
           }
         }, (error) => {
           console.error("Firestore Error:", error);
-          if (!isSynced) updateUI("OFF");
         });
-
-        setTimeout(() => {
-            if (!isSynced) {
-                isSynced = true;
-                updateUI("OFF");
-            }
-        }, 5000);
       }
     });
 
+    setTimeout(() => {
+        if (!isSynced) { isSynced = true; updateUI("OFF"); }
+    }, 4000);
+
     // 3. Koneksi MQTT
     const mqttOptions = { 
-        username: "mqtt_user", 
-        password: "mqtt_pass", 
-        protocol: "wss",
-        clientId: 'web_client_' + Math.random().toString(16).substr(2, 8),
-        connectTimeout: 10000
+        clientId: 'agriot_web_' + Math.random().toString(16).substr(2, 8),
+        connectTimeout: 30000,
+        keepalive: 60,
+        reconnectPeriod: 5000, 
+        clean: true
     };
+    
     const client = mqtt.connect("wss://broker.hivemq.com:8884/mqtt", mqttOptions);
 
     client.on("connect", () => {
       mqttText.innerText = "MQTT Connected";
-      mqttDot.classList.replace("bg-red-500", "bg-green-400");
-      mqttPill.classList.replace("bg-red-500/20", "bg-green-500/20");
-      mqttPill.classList.replace("text-red-300", "text-green-300");
-      mqttPill.classList.replace("border-red-500/50", "border-green-500/50");
+      mqttDot.className = "w-1.5 h-1.5 mr-2 rounded-full bg-green-400";
+      mqttPill.className = "inline-flex items-center px-3 py-1 mt-4 rounded-full text-[9px] font-bold bg-green-500/20 text-green-300 border border-green-500/50 uppercase tracking-tighter";
       client.subscribe(TOPIC_STATUS, { qos: 1 });
       client.publish(TOPIC_CMD, "GET_STATUS", { qos: 1 });
     });
 
-    client.on("error", (err) => {
-        console.error("MQTT Connection Error:", err);
-        mqttText.innerText = "MQTT Error";
+    client.on("offline", () => {
+      mqttText.innerText = "MQTT Offline";
+      mqttDot.className = "w-1.5 h-1.5 mr-2 rounded-full bg-red-500";
     });
 
     client.on("message", async (topic, message) => {
@@ -195,47 +193,62 @@
             lastStatus = msg;
             updateUI(msg);
         }
-
         if (currentUser) {
-          const statusDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'lamp_status', 'latest');
           try {
+            const statusDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'lamp_status', 'latest');
             await setDoc(statusDocRef, { 
                 status: msg, 
-                updatedAt: new Date().toISOString(),
-                deviceId: "ESP32_01"
+                updatedAt: new Date().toISOString()
             }, { merge: true });
-          } catch (e) {
-            console.error("Gagal simpan ke Firebase:", e);
-          }
+          } catch (e) {}
         }
       }
     });
 
-    // Actions
+    // Perbaikan Fungsi Logout
+    window.handleLogout = async () => {
+      const btn = event.currentTarget;
+      btn.innerHTML = "REDIRECTING...";
+      btn.disabled = true;
+      
+      document.body.classList.add("fade-out");
+
+      try {
+        // 1. Putus koneksi MQTT
+        if (client && client.connected) {
+          client.end(true);
+        }
+        
+        // 2. Sign out dari Firebase
+        await signOut(auth);
+        
+        // 3. Redirect paksa
+        setTimeout(() => {
+          window.location.replace(REDIRECT_URL);
+        }, 300);
+      } catch (err) {
+        console.error("Logout error:", err);
+        window.location.href = REDIRECT_URL;
+      }
+    };
+
     window.lampOn = () => {
         if (client.connected) client.publish(TOPIC_CMD, "ON", { qos: 1 });
-        else console.warn("MQTT tidak terhubung");
+        else alert("Menunggu koneksi MQTT...");
     };
     window.lampOff = () => {
         if (client.connected) client.publish(TOPIC_CMD, "OFF", { qos: 1 });
-        else console.warn("MQTT tidak terhubung");
-    };
-    window.handleLogout = () => {
-      document.body.classList.add("fade-out");
-      setTimeout(() => {
-        if (client.connected) client.end();
-        window.location.href = REDIRECT_URL;
-      }, 500);
+        else alert("Menunggu koneksi MQTT...");
     };
     window.exportReport = () => {
-        if (fullHistory.length === 0) return alert("Data kosong");
+        if (fullHistory.length === 0) return alert("Log kosong");
         let csv = "Tanggal,Waktu,Status\n";
         fullHistory.forEach(r => { csv += `${r.tanggal},${r.waktu},${r.status}\n`; });
         const blob = new Blob([csv], { type: 'text/csv' });
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = 'log_lampu.csv';
+        a.download = 'agriot_log.csv';
         a.click();
     };
   </script>
@@ -243,80 +256,73 @@
   <style>
     :root { --on-color: #fbbf24; --off-color: #94a3b8; }
     body {
-      background-image: linear-gradient(rgba(15, 23, 42, 0.85), rgba(15, 23, 42, 0.85)), 
-                        url('https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?ixlib=rb-4.0.3&auto=format&fit=crop&w=1920&q=80');
-      background-size: cover; background-position: center; background-attachment: fixed;
-      font-family: 'Inter', sans-serif; transition: all 0.3s ease;
+      background: #0f172a;
+      background-image: radial-gradient(at 0% 0%, rgba(30, 58, 138, 0.3) 0, transparent 50%), 
+                        radial-gradient(at 50% 0%, rgba(15, 23, 42, 0.9) 0, transparent 50%);
+      font-family: 'Inter', sans-serif; transition: opacity 0.5s ease;
+      overflow-x: hidden;
     }
-    .glass-morphism { background: rgba(255, 255, 255, 0.05); backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.1); }
+    .glass-morphism { background: rgba(255, 255, 255, 0.03); backdrop-filter: blur(20px); border: 1px solid rgba(255, 255, 255, 0.08); }
     .bulb-container { position: relative; width: 100px; height: 100px; margin: 0 auto 1.5rem; }
-    .status-on .bulb-glow { fill: var(--on-color); filter: drop-shadow(0 0 20px rgba(251, 191, 36, 1)); }
-    .status-off .bulb-glow { fill: rgba(226, 232, 240, 0.3); }
+    .status-on .bulb-glow { fill: var(--on-color); filter: drop-shadow(0 0 30px rgba(251, 191, 36, 0.8)); }
+    .status-off .bulb-glow { fill: rgba(255, 255, 255, 0.05); }
     .sync-pulse { animation: pulse-blue 2s infinite; }
-    @keyframes pulse-blue { 0% { color: rgba(255, 255, 255, 0.2); } 50% { color: rgba(96, 165, 250, 0.5); } 100% { color: rgba(255, 255, 255, 0.2); } }
-    canvas { max-height: 180px; }
-    .fade-out { opacity: 0; transform: scale(0.9); transition: all 0.5s ease; }
+    @keyframes pulse-blue { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
+    .fade-out { opacity: 0; pointer-events: none; }
   </style>
 </head>
-<body class="flex flex-col items-center justify-center min-h-screen p-6 space-y-6">
+<body class="flex flex-col items-center justify-center min-h-screen p-4">
 
   <div class="fixed top-6 right-6 z-50">
-    <button onclick="handleLogout()" class="glass-morphism px-4 py-2 rounded-xl text-white text-xs font-bold flex items-center gap-2 hover:bg-red-500/20 hover:border-red-500/50 transition-all active:scale-95">
+    <button onclick="handleLogout()" class="glass-morphism px-4 py-2 rounded-2xl text-white text-xs font-bold flex items-center gap-2 hover:bg-white/10 transition-all active:scale-95 border border-white/10">
       <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
       </svg>
-      LOGOUT
+      KELUAR
     </button>
   </div>
 
-  <div id="main-card" class="glass-morphism rounded-3xl shadow-2xl p-8 w-full max-w-md text-center text-white relative overflow-hidden">
-    <header class="mb-6">
-      <h1 class="text-3xl font-black tracking-tight leading-tight">Smart Lamp <span class="text-blue-400 block text-xl">"AGRIOT V1.0"</span></h1>
-      <p class="text-xs font-semibold text-blue-200 mt-1 uppercase tracking-widest text-center">SMK Negeri 1 Japara</p>
+  <div class="glass-morphism rounded-[3rem] shadow-2xl p-8 w-full max-w-sm text-center text-white relative">
+    <header class="mb-8">
+      <h1 class="text-3xl font-black tracking-tighter">AGRIOT <span class="text-blue-500">V1.0</span></h1>
+      <p class="text-[10px] font-bold text-blue-400/60 uppercase tracking-[0.3em] mt-1">SMK Negeri 1 Japara</p>
       
-      <div id="mqtt-status-pill" class="inline-flex items-center px-3 py-1 mt-4 rounded-full text-[10px] font-bold bg-red-500/20 text-red-300 border border-red-500/50 uppercase tracking-tighter">
-        <span id="mqtt-dot" class="w-2 h-2 mr-2 rounded-full bg-red-500 animate-pulse"></span>
-        <span id="mqtt-text">Connecting...</span>
+      <div id="mqtt-status-pill" class="inline-flex items-center px-3 py-1 mt-6 rounded-full text-[9px] font-bold bg-white/5 text-white/40 border border-white/10 uppercase tracking-tighter">
+        <span id="mqtt-dot" class="w-1.5 h-1.5 mr-2 rounded-full bg-white/20"></span>
+        <span id="mqtt-text">Mencoba Terhubung...</span>
       </div>
     </header>
 
     <div id="lamp-wrapper" class="bulb-container status-off">
-      <svg class="bulb-svg" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-        <path id="bulb-path" class="bulb-glow" d="M12,2A7,7,0,0,0,5,9c0,3.11,2.1,5.73,5,6.6V19a2,2,0,0,0,2,2,2,2,0,0,0,2-2V15.6c2.9-.87,5-3.49,5-6.6A7,7,0,0,0,12,2Z" fill="#e2e8f0"/>
-        <path class="bulb-glass" d="M9,21h6v1a1,1,0,0,1-1,1H10a1,1,0,0,1-1-1Z" fill="#94a3b8"/>
+      <svg class="w-full h-full" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path class="bulb-glow" d="M12,2A7,7,0,0,0,5,9c0,3.11,2.1,5.73,5,6.6V19a2,2,0,0,0,2,2,2,2,0,0,0,2-2V15.6c2.9-.87,5-3.49,5-6.6A7,7,0,0,0,12,2Z"/>
+        <path d="M9,21h6v1a1,1,0,0,1-1,1H10a1,1,0,0,1-1-1Z" fill="rgba(255,255,255,0.2)"/>
       </svg>
     </div>
 
-    <div class="mb-6">
-      <p class="text-blue-200 text-[10px] uppercase tracking-[0.2em] mb-1 opacity-60">Status Real-time</p>
-      <div id="status-text" class="text-4xl font-black text-white/20 sync-pulse uppercase">Syncing...</div>
+    <div class="mb-8">
+      <p class="text-[10px] uppercase tracking-widest text-white/30 mb-1 font-bold">Status Lampu</p>
+      <div id="status-text" class="text-5xl font-black text-white/10 sync-pulse uppercase tracking-tighter">SYNC...</div>
     </div>
 
-    <div class="grid grid-cols-2 gap-4 mb-6">
-      <button onclick="lampOn()" class="bg-blue-600 hover:bg-blue-500 active:scale-95 transition-all text-white text-sm font-bold py-4 rounded-2xl shadow-lg shadow-blue-900/50 border border-blue-400/30 uppercase tracking-widest">
+    <div class="grid grid-cols-2 gap-4 mb-8">
+      <button onclick="lampOn()" class="bg-blue-600 hover:bg-blue-500 active:scale-95 transition-all text-white text-xs font-black py-4 rounded-3xl shadow-xl shadow-blue-900/20 uppercase tracking-widest">
         ON
       </button>
-      <button onclick="lampOff()" class="bg-white/5 hover:bg-white/10 active:scale-95 transition-all text-white text-sm font-bold py-4 rounded-2xl border border-white/10 uppercase tracking-widest">
+      <button onclick="lampOff()" class="bg-white/5 hover:bg-white/10 active:scale-95 transition-all text-white text-xs font-black py-4 rounded-3xl border border-white/10 uppercase tracking-widest">
         OFF
       </button>
     </div>
 
-    <div class="mt-4 p-4 bg-black/30 rounded-2xl border border-white/5 text-center">
-      <div class="flex justify-between items-center mb-2">
-        <p class="text-[10px] text-blue-300 uppercase tracking-widest font-bold text-left">Aktivitas Terakhir</p>
-        <button onclick="exportReport()" class="flex items-center gap-1 text-[9px] bg-blue-500/20 hover:bg-blue-500/40 text-blue-300 px-2 py-1 rounded-md border border-blue-500/30 transition-all font-bold">
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-          </svg>
-          EXPORT REPORT
-        </button>
+    <div class="p-4 bg-black/20 rounded-[2rem] border border-white/5">
+      <div class="flex justify-between items-center mb-4">
+        <span class="text-[9px] font-black text-blue-400 uppercase tracking-widest">Riwayat Aktif</span>
+        <button onclick="exportReport()" class="text-[8px] bg-white/5 hover:bg-white/10 px-2 py-1 rounded-lg border border-white/10 font-bold">EXPORT</button>
       </div>
-      <canvas id="activityChart"></canvas>
+      <div class="h-[150px]">
+        <canvas id="activityChart"></canvas>
+      </div>
     </div>
-
-    <footer class="mt-6 pt-4 border-t border-white/5">
-      <p class="text-[10px] text-white/30 italic uppercase tracking-tighter">Industrial IoT Monitoring System</p>
-    </footer>
   </div>
 </body>
 </html>
