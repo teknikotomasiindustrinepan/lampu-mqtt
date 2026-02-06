@@ -55,12 +55,29 @@
     canvas {
       max-height: 180px;
     }
+
+    /* Animasi Keluar */
+    .fade-out {
+      opacity: 0;
+      transform: scale(0.9);
+      transition: all 0.5s ease;
+    }
   </style>
 </head>
 <body class="flex flex-col items-center justify-center min-h-screen p-6 space-y-6">
 
+  <!-- Tombol Logout di Pojok Kanan Atas -->
+  <div class="fixed top-6 right-6 z-50">
+    <button onclick="handleLogout()" class="glass-morphism px-4 py-2 rounded-xl text-white text-xs font-bold flex items-center gap-2 hover:bg-red-500/20 hover:border-red-500/50 transition-all active:scale-95">
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+      </svg>
+      LOGOUT
+    </button>
+  </div>
+
   <!-- Card Utama -->
-  <div class="glass-morphism rounded-3xl shadow-2xl p-8 w-full max-w-md text-center text-white">
+  <div id="main-card" class="glass-morphism rounded-3xl shadow-2xl p-8 w-full max-w-md text-center text-white relative overflow-hidden">
     <header class="mb-6">
       <h1 class="text-3xl font-black tracking-tight leading-tight">Smart Lamp <span class="text-blue-400 block text-xl">"AGRIOT V1.0"</span></h1>
       <p class="text-xs font-semibold text-blue-200 mt-1 uppercase tracking-widest text-center">SMK Negeri 1 Japara</p>
@@ -117,9 +134,11 @@
     const mqttText = document.getElementById("mqtt-text");
     const mqttDot = document.getElementById("mqtt-dot");
     const mqttPill = document.getElementById("mqtt-status-pill");
+    const mainCard = document.getElementById("main-card");
 
     const fullHistory = [];
     const TOPIC_STATUS = "lampu/esp32_01/status";
+    const REDIRECT_URL = "https://teknikotomasiindustrinepan.github.io/agriot_classy/";
 
     // Inisialisasi Chart.js
     const ctx = document.getElementById('activityChart').getContext('2d');
@@ -188,7 +207,6 @@
         return;
       }
 
-      // Menyiapkan data untuk grafik di dalam file report
       const labelsJson = JSON.stringify(fullHistory.map(h => h.waktu));
       const dataJson = JSON.stringify(fullHistory.map(h => h.rawVal));
       
@@ -203,73 +221,69 @@
       });
 
       const reportHtml = `
-<!DOCTYPE html>
-<html>
-<head>
-  <title>Report Smart Lamp AGRIOT V1.0</title>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"><\/script>
-  <style>
-    body { font-family: sans-serif; padding: 40px; color: #333; line-height: 1.6; }
-    .header { text-align: center; border-bottom: 2px solid #3b82f6; padding-bottom: 20px; margin-bottom: 30px; }
-    h1 { margin: 0; color: #1e3a8a; }
-    .chart-container { background: #f8fafc; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; margin-bottom: 40px; }
-    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-    th { background: #3b82f6; color: white; text-align: left; padding: 12px; }
-    .footer { margin-top: 50px; font-size: 12px; text-align: center; color: #94a3b8; }
-  </style>
-</head>
-<body>
-  <div class="header">
-    <h1>Laporan Aktivitas Smart Lamp</h1>
-    <p>AGRIOT V1.0 - SMK Negeri 1 Japara</p>
-    <p style="font-size: 12px; color: #64748b;">Dicetak pada: ${new Date().toLocaleString('id-ID')}</p>
-  </div>
-
-  <div class="chart-container">
-    <h3>Grafik Aktivitas</h3>
-    <canvas id="reportChart" style="max-height: 300px;"></canvas>
-  </div>
-
-  <h3>Detail Log Data</h3>
-  <table>
-    <thead>
-      <tr>
-        <th>Tanggal</th>
-        <th>Waktu</th>
-        <th>Topic MQTT</th>
-        <th>Status</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${tableRows}
-    </tbody>
-  </table>
-
-  <div class="footer">
-    &copy; 2024 AGRIOT System - SMK Negeri 1 Japara. Dokumen ini dibuat secara otomatis oleh sistem.
-  </div>
-
-  <script>
-    const ctx = document.getElementById('reportChart').getContext('2d');
-    new Chart(ctx, {
-      type: 'line',
-      data: {
-        labels: ${labelsJson},
-        datasets: [{
-          label: 'Status (1=ON, 0=OFF)',
-          data: ${dataJson},
-          borderColor: '#3b82f6',
-          backgroundColor: 'rgba(59, 130, 246, 0.1)',
-          stepped: true,
-          fill: true,
-          borderWidth: 2
-        }]
-      },
-      options: { scales: { y: { min: -0.1, max: 1.1, ticks: { stepSize: 1 } } } }
-    });
-  <\/script>
-</body>
-</html>`;
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Report Smart Lamp AGRIOT V1.0</title>
+          <script src="https://cdn.jsdelivr.net/npm/chart.js"><\/script>
+          <style>
+            body { font-family: sans-serif; padding: 40px; color: #333; line-height: 1.6; }
+            .header { text-align: center; border-bottom: 2px solid #3b82f6; padding-bottom: 20px; margin-bottom: 30px; }
+            h1 { margin: 0; color: #1e3a8a; }
+            .chart-container { background: #f8fafc; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; margin-bottom: 40px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+            th { background: #3b82f6; color: white; text-align: left; padding: 12px; }
+            .footer { margin-top: 50px; font-size: 12px; text-align: center; color: #94a3b8; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>Laporan Aktivitas Smart Lamp</h1>
+            <p>AGRIOT V1.0 - SMK Negeri 1 Japara</p>
+            <p style="font-size: 12px; color: #64748b;">Dicetak pada: ${new Date().toLocaleString('id-ID')}</p>
+          </div>
+          <div class="chart-container">
+            <h3>Grafik Aktivitas</h3>
+            <canvas id="reportChart" style="max-height: 300px;"></canvas>
+          </div>
+          <h3>Detail Log Data</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>Tanggal</th>
+                <th>Waktu</th>
+                <th>Topic MQTT</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${tableRows}
+            </tbody>
+          </table>
+          <div class="footer">
+            &copy; 2024 AGRIOT System - SMK Negeri 1 Japara. Dokumen ini dibuat secara otomatis oleh sistem.
+          </div>
+          <script>
+            const ctx = document.getElementById('reportChart').getContext('2d');
+            new Chart(ctx, {
+              type: 'line',
+              data: {
+                labels: ${labelsJson},
+                datasets: [{
+                  label: 'Status (1=ON, 0=OFF)',
+                  data: ${dataJson},
+                  borderColor: '#3b82f6',
+                  backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                  stepped: true,
+                  fill: true,
+                  borderWidth: 2
+                }]
+              },
+              options: { scales: { y: { min: -0.1, max: 1.1, ticks: { stepSize: 1 } } } }
+            });
+          <\/script>
+        </body>
+        </html>`;
 
       const blob = new Blob([reportHtml], { type: 'text/html' });
       const link = document.createElement("a");
@@ -315,6 +329,22 @@
     function lampOff() { client.publish("lampu/esp32_01/cmd", "OFF"); updateUI("OFF"); }
 
     client.on("error", (err) => { mqttText.innerText = "Connection Error"; });
+
+    // Fungsi Logout
+    function handleLogout() {
+      // Tambahkan efek transisi keluar
+      document.body.classList.add("fade-out");
+      
+      // Tunggu animasi sebentar sebelum redirect
+      setTimeout(() => {
+        // Disconnect MQTT client jika diperlukan
+        if (client.connected) {
+          client.end();
+        }
+        // Redirect
+        window.location.href = REDIRECT_URL;
+      }, 500);
+    }
   </script>
 </body>
 </html>
