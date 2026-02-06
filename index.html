@@ -3,21 +3,23 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Smart Home - ESP32 Light Control</title>
+  <title>Smart Lamp - AGRIOT V1.0 - SMK Negeri 1 Japara</title>
   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     :root {
-      --bg-color: #f0f2f5;
-      --card-bg: #ffffff;
-      --primary: #3b82f6;
       --on-color: #fbbf24;
       --off-color: #94a3b8;
     }
 
     body {
-      background-color: var(--bg-color);
-      transition: background-color 0.3s ease;
+      /* Menggunakan gambar yang Anda unggah sebagai background */
+      background-image: linear-gradient(rgba(15, 23, 42, 0.8), rgba(15, 23, 42, 0.8)), 
+                        url('https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?ixlib=rb-4.0.3&auto=format&fit=crop&w=1920&q=80');
+      background-size: cover;
+      background-position: center;
+      background-attachment: fixed;
+      transition: all 0.3s ease;
     }
 
     .bulb-container {
@@ -36,7 +38,7 @@
     /* Efek cahaya saat lampu ON */
     .status-on .bulb-glow {
       fill: var(--on-color);
-      filter: drop-shadow(0 0 15px rgba(251, 191, 36, 0.8));
+      filter: drop-shadow(0 0 20px rgba(251, 191, 36, 1));
     }
 
     .status-on .bulb-glass {
@@ -45,23 +47,29 @@
 
     .status-off .bulb-glow {
       fill: #e2e8f0;
+      opacity: 0.5;
     }
 
     .status-off .bulb-glass {
       fill: #f1f5f9;
     }
 
-    .btn-active {
-      transform: scale(0.95);
+    .glass-morphism {
+      background: rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.2);
     }
   </style>
 </head>
 <body class="flex items-center justify-center min-h-screen p-4">
 
-  <div class="bg-white rounded-3xl shadow-xl p-8 w-full max-w-sm text-center">
+  <div class="glass-morphism rounded-3xl shadow-2xl p-8 w-full max-w-sm text-center text-white">
     <header class="mb-6">
-      <h1 class="text-2xl font-bold text-gray-800">Smart Lamp</h1>
-      <div id="mqtt-status-pill" class="inline-flex items-center px-3 py-1 mt-2 rounded-full text-xs font-medium bg-red-100 text-red-700">
+      <h1 class="text-3xl font-black tracking-tight leading-tight">Smart Lamp <span class="text-blue-400 block text-xl">"AGRIOT V1.0"</span></h1>
+      <p class="text-xs font-semibold text-blue-200 mt-1 uppercase tracking-widest">SMK Negeri 1 Japara</p>
+      
+      <div id="mqtt-status-pill" class="inline-flex items-center px-3 py-1 mt-4 rounded-full text-xs font-medium bg-red-500/20 text-red-300 border border-red-500/50">
         <span id="mqtt-dot" class="w-2 h-2 mr-2 rounded-full bg-red-500 animate-pulse"></span>
         <span id="mqtt-text">MQTT Disconnected</span>
       </div>
@@ -76,21 +84,21 @@
     </div>
 
     <div class="mb-8">
-      <p class="text-gray-500 text-sm uppercase tracking-widest mb-1">Status Saat Ini</p>
-      <div id="status-text" class="text-3xl font-black text-gray-400">OFF</div>
+      <p class="text-blue-200 text-xs uppercase tracking-widest mb-1 opacity-70">Status Saat Ini</p>
+      <div id="status-text" class="text-4xl font-black text-white/30 transition-all duration-300">OFF</div>
     </div>
 
     <div class="grid grid-cols-2 gap-4">
-      <button onclick="lampOn()" class="bg-blue-500 hover:bg-blue-600 active:scale-95 transition-all text-white font-bold py-4 rounded-2xl shadow-lg shadow-blue-200">
+      <button onclick="lampOn()" class="bg-blue-600 hover:bg-blue-500 active:scale-95 transition-all text-white font-bold py-4 rounded-2xl shadow-lg shadow-blue-900/50 border border-blue-400/30">
         NYALAKAN
       </button>
-      <button onclick="lampOff()" class="bg-gray-100 hover:bg-gray-200 active:scale-95 transition-all text-gray-600 font-bold py-4 rounded-2xl">
+      <button onclick="lampOff()" class="bg-white/10 hover:bg-white/20 active:scale-95 transition-all text-white font-bold py-4 rounded-2xl border border-white/10">
         MATIKAN
       </button>
     </div>
 
-    <footer class="mt-8 pt-6 border-t border-gray-100">
-      <p class="text-xs text-gray-400 italic">Topic: lampu/esp32_01</p>
+    <footer class="mt-8 pt-6 border-t border-white/10">
+      <p class="text-[10px] text-white/40 italic">Industrial Control System • Topic: lampu/esp32_01</p>
     </footer>
   </div>
 
@@ -114,9 +122,9 @@
 
     client.on("connect", function () {
       mqttText.innerText = "MQTT Connected";
-      mqttDot.classList.replace("bg-red-500", "bg-green-500");
-      mqttPill.classList.replace("bg-red-100", "text-red-700");
-      mqttPill.classList.add("bg-green-100", "text-green-700");
+      mqttDot.classList.replace("bg-red-500", "bg-green-400");
+      mqttPill.classList.remove("bg-red-500/20", "text-red-300", "border-red-500/50");
+      mqttPill.classList.add("bg-green-500/20", "text-green-300", "border-green-500/50");
       client.subscribe("lampu/esp32_01/status");
     });
 
@@ -129,23 +137,23 @@
     function updateUI(status) {
       statusText.innerText = status;
       if (status === "ON") {
-        statusText.classList.replace("text-gray-400", "text-amber-500");
+        statusText.classList.remove("text-white/30");
+        statusText.classList.add("text-amber-400", "drop-shadow-[0_0_10px_rgba(251,191,36,0.5)]");
         lampWrapper.classList.replace("status-off", "status-on");
       } else {
-        statusText.classList.replace("text-amber-500", "text-gray-400");
+        statusText.classList.remove("text-amber-400", "drop-shadow-[0_0_10px_rgba(251,191,36,0.5)]");
+        statusText.classList.add("text-white/30");
         lampWrapper.classList.replace("status-on", "status-off");
       }
     }
 
     function lampOn() {
       client.publish("lampu/esp32_01/cmd", "ON");
-      // Optimistic update (opsional, bisa menunggu feedback dari MQTT)
       updateUI("ON");
     }
 
     function lampOff() {
       client.publish("lampu/esp32_01/cmd", "OFF");
-      // Optimistic update
       updateUI("OFF");
     }
 
