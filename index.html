@@ -16,10 +16,10 @@
 
     /**
      * KONFIGURASI FIREBASE UNTUK: agriot-classy-japara
-     * Pastikan Anda menyalin API KEY asli dari Firebase Console (Project Settings).
+     * Pastikan API KEY asli disalin dari Firebase Console.
      */
     const myLocalConfig = {
-      apiKey: "AIzaSy...", // GANTI DENGAN API KEY ASLI ANDA
+      apiKey: "AIzaSy...", 
       authDomain: "agriot-classy-japara.firebaseapp.com",
       projectId: "agriot-classy-japara",
       storageBucket: "agriot-classy-japara.appspot.com",
@@ -44,7 +44,7 @@
 
     // State Aplikasi
     let currentUser = null;
-    let lastStatus = null;
+    let lastStatus = null; 
     let isSynced = false;
 
     // UI Elements
@@ -96,6 +96,13 @@
       const now = new Date();
       const timeStr = now.toLocaleTimeString('id-ID');
       const val = (status === "ON") ? 1 : 0;
+      
+      // Hindari duplikasi log jika status sama dengan data terakhir di chart
+      if (activityChart.data.datasets[0].data.length > 0) {
+        const lastVal = activityChart.data.datasets[0].data[activityChart.data.datasets[0].data.length - 1];
+        if (lastVal === val) return; 
+      }
+
       fullHistory.push({ tanggal: now.toLocaleDateString('id-ID'), waktu: timeStr, status: status });
       activityChart.data.labels.push(timeStr);
       activityChart.data.datasets[0].data.push(val);
@@ -107,7 +114,9 @@
     }
 
     function updateUI(status) {
-      const finalStatus = (status && status.includes("ON")) ? "ON" : "OFF";
+      if (!status) return;
+      const finalStatus = status.includes("ON") ? "ON" : "OFF";
+      
       statusText.innerText = finalStatus;
       statusText.classList.remove("sync-pulse");
       
@@ -133,33 +142,43 @@
         }
       } catch (error) {
         console.error("Auth Error:", error);
-        if (!isSynced) { isSynced = true; updateUI("OFF"); }
       }
     };
     initAuth();
 
-    onAuthStateChanged(auth, (user) => {
+    onAuthStateChanged(auth, async (user) => {
       currentUser = user;
       if (user) {
         const statusDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'lamp_status', 'latest');
+        
+        // Ambil data awal segera setelah login agar tidak "OFF" default
+        try {
+          const initialSnap = await getDoc(statusDocRef);
+          if (initialSnap.exists()) {
+            const data = initialSnap.data();
+            if (!isSynced) { // Hanya jika belum diupdate oleh MQTT
+                lastStatus = data.status;
+                updateUI(data.status);
+                isSynced = true;
+            }
+          }
+        } catch (err) {
+          console.error("Initial Fetch Error:", err);
+        }
+
+        // Jalankan listener realtime
         onSnapshot(statusDocRef, (docSnap) => {
           if (docSnap.exists()) {
             const data = docSnap.data();
-            isSynced = true;
             if (data.status !== lastStatus) {
                 lastStatus = data.status;
                 updateUI(data.status);
+                isSynced = true;
             }
           }
-        }, (error) => {
-          console.error("Firestore Error:", error);
         });
       }
     });
-
-    setTimeout(() => {
-        if (!isSynced) { isSynced = true; updateUI("OFF"); }
-    }, 4000);
 
     // 3. Koneksi MQTT
     const mqttOptions = { 
@@ -177,22 +196,21 @@
       mqttDot.className = "w-1.5 h-1.5 mr-2 rounded-full bg-green-400";
       mqttPill.className = "inline-flex items-center px-3 py-1 mt-4 rounded-full text-[9px] font-bold bg-green-500/20 text-green-300 border border-green-500/50 uppercase tracking-tighter";
       client.subscribe(TOPIC_STATUS, { qos: 1 });
+      // Minta status terbaru dari ESP32
       client.publish(TOPIC_CMD, "GET_STATUS", { qos: 1 });
-    });
-
-    client.on("offline", () => {
-      mqttText.innerText = "MQTT Offline";
-      mqttDot.className = "w-1.5 h-1.5 mr-2 rounded-full bg-red-500";
     });
 
     client.on("message", async (topic, message) => {
       const msg = message.toString().trim().toUpperCase();
       if (topic === TOPIC_STATUS) {
-        if (!isSynced || msg !== lastStatus) {
-            isSynced = true;
+        // Hanya update jika status berubah dari yang ada di memori
+        if (msg !== lastStatus) {
             lastStatus = msg;
             updateUI(msg);
+            isSynced = true;
         }
+        
+        // Selalu simpan status terbaru ke database setiap kali ada pesan MQTT masuk
         if (currentUser) {
           try {
             const statusDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'lamp_status', 'latest');
@@ -205,29 +223,16 @@
       }
     });
 
-    // Perbaikan Fungsi Logout
     window.handleLogout = async () => {
       const btn = event.currentTarget;
       btn.innerHTML = "REDIRECTING...";
       btn.disabled = true;
-      
       document.body.classList.add("fade-out");
-
       try {
-        // 1. Putus koneksi MQTT
-        if (client && client.connected) {
-          client.end(true);
-        }
-        
-        // 2. Sign out dari Firebase
+        if (client && client.connected) client.end(true);
         await signOut(auth);
-        
-        // 3. Redirect paksa
-        setTimeout(() => {
-          window.location.replace(REDIRECT_URL);
-        }, 300);
+        setTimeout(() => window.location.replace(REDIRECT_URL), 300);
       } catch (err) {
-        console.error("Logout error:", err);
         window.location.href = REDIRECT_URL;
       }
     };
@@ -282,7 +287,7 @@
     </button>
   </div>
 
-  <div class="glass-morphism rounded-[3rem] shadow-2xl p-8 w-full max-w-sm text-center text-white relative">
+  <div class="glass-morphism rounded-[3rem] shadow-2xl p-8 w-full max-sm text-center text-white relative">
     <header class="mb-8">
       <h1 class="text-3xl font-black tracking-tighter">AGRIOT <span class="text-blue-500">V1.0</span></h1>
       <p class="text-[10px] font-bold text-blue-400/60 uppercase tracking-[0.3em] mt-1">SMK Negeri 1 Japara</p>
