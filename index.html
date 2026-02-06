@@ -7,140 +7,38 @@
   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <style>
-    :root {
-      --on-color: #fbbf24;
-      --off-color: #94a3b8;
-    }
+  
+  <!-- Firebase SDK -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-    body {
-      background-image: linear-gradient(rgba(15, 23, 42, 0.85), rgba(15, 23, 42, 0.85)), 
-                        url('https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?ixlib=rb-4.0.3&auto=format&fit=crop&w=1920&q=80');
-      background-size: cover;
-      background-position: center;
-      background-attachment: fixed;
-      transition: all 0.3s ease;
-      font-family: 'Inter', sans-serif;
-    }
+    // Inisialisasi Firebase
+    const firebaseConfig = JSON.parse(__firebase_config);
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'smart-lamp-agriot';
 
-    .glass-morphism {
-      background: rgba(255, 255, 255, 0.05);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-    }
+    // Konfigurasi MQTT
+    const TOPIC_STATUS = "lampu/esp32_01/status";
+    const TOPIC_CMD = "lampu/esp32_01/cmd";
+    const REDIRECT_URL = "https://teknikotomasiindustrinepan.github.io/agriot_classy/";
 
-    .bulb-container {
-      position: relative;
-      width: 100px;
-      height: 100px;
-      margin: 0 auto 1.5rem;
-    }
+    // State Aplikasi
+    let currentUser = null;
+    let lastStatus = null;
+    let isSynced = false;
 
-    .bulb-svg {
-      width: 100%;
-      height: 100%;
-      transition: all 0.3s ease;
-    }
-
-    .status-on .bulb-glow {
-      fill: var(--on-color);
-      filter: drop-shadow(0 0 20px rgba(251, 191, 36, 1));
-    }
-
-    .status-off .bulb-glow {
-      fill: rgba(226, 232, 240, 0.3);
-    }
-
-    canvas {
-      max-height: 180px;
-    }
-
-    /* Animasi Keluar */
-    .fade-out {
-      opacity: 0;
-      transform: scale(0.9);
-      transition: all 0.5s ease;
-    }
-  </style>
-</head>
-<body class="flex flex-col items-center justify-center min-h-screen p-6 space-y-6">
-
-  <!-- Tombol Logout di Pojok Kanan Atas -->
-  <div class="fixed top-6 right-6 z-50">
-    <button onclick="handleLogout()" class="glass-morphism px-4 py-2 rounded-xl text-white text-xs font-bold flex items-center gap-2 hover:bg-red-500/20 hover:border-red-500/50 transition-all active:scale-95">
-      <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-      </svg>
-      LOGOUT
-    </button>
-  </div>
-
-  <!-- Card Utama -->
-  <div id="main-card" class="glass-morphism rounded-3xl shadow-2xl p-8 w-full max-w-md text-center text-white relative overflow-hidden">
-    <header class="mb-6">
-      <h1 class="text-3xl font-black tracking-tight leading-tight">Smart Lamp <span class="text-blue-400 block text-xl">"AGRIOT V1.0"</span></h1>
-      <p class="text-xs font-semibold text-blue-200 mt-1 uppercase tracking-widest text-center">SMK Negeri 1 Japara</p>
-      
-      <div id="mqtt-status-pill" class="inline-flex items-center px-3 py-1 mt-4 rounded-full text-[10px] font-bold bg-red-500/20 text-red-300 border border-red-500/50 uppercase tracking-tighter">
-        <span id="mqtt-dot" class="w-2 h-2 mr-2 rounded-full bg-red-500 animate-pulse"></span>
-        <span id="mqtt-text">MQTT Disconnected</span>
-      </div>
-    </header>
-
-    <div id="lamp-wrapper" class="bulb-container status-off">
-      <svg class="bulb-svg" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-        <path class="bulb-glow" d="M12,2A7,7,0,0,0,5,9c0,3.11,2.1,5.73,5,6.6V19a2,2,0,0,0,2,2,2,2,0,0,0,2-2V15.6c2.9-.87,5-3.49,5-6.6A7,7,0,0,0,12,2Z" fill="#e2e8f0"/>
-        <path class="bulb-glass" d="M9,21h6v1a1,1,0,0,1-1,1H10a1,1,0,0,1-1-1Z" fill="#94a3b8"/>
-      </svg>
-    </div>
-
-    <div class="mb-6">
-      <p class="text-blue-200 text-[10px] uppercase tracking-[0.2em] mb-1 opacity-60">Status Real-time</p>
-      <div id="status-text" class="text-4xl font-black text-white/20">OFF</div>
-    </div>
-
-    <div class="grid grid-cols-2 gap-4 mb-6">
-      <button onclick="lampOn()" class="bg-blue-600 hover:bg-blue-500 active:scale-95 transition-all text-white text-sm font-bold py-4 rounded-2xl shadow-lg shadow-blue-900/50 border border-blue-400/30 uppercase tracking-widest">
-        ON
-      </button>
-      <button onclick="lampOff()" class="bg-white/5 hover:bg-white/10 active:scale-95 transition-all text-white text-sm font-bold py-4 rounded-2xl border border-white/10 uppercase tracking-widest">
-        OFF
-      </button>
-    </div>
-
-    <!-- Container Grafik -->
-    <div class="mt-4 p-4 bg-black/30 rounded-2xl border border-white/5 text-center">
-      <div class="flex justify-between items-center mb-2">
-        <p class="text-[10px] text-blue-300 uppercase tracking-widest font-bold text-left">Aktivitas Terakhir</p>
-        <button onclick="exportReport()" class="flex items-center gap-1 text-[9px] bg-blue-500/20 hover:bg-blue-500/40 text-blue-300 px-2 py-1 rounded-md border border-blue-500/30 transition-all font-bold">
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-          </svg>
-          EXPORT REPORT
-        </button>
-      </div>
-      <canvas id="activityChart"></canvas>
-    </div>
-
-    <footer class="mt-6 pt-4 border-t border-white/5">
-      <p class="text-[10px] text-white/30 italic uppercase tracking-tighter">Industrial IoT Monitoring System</p>
-    </footer>
-  </div>
-
-  <script>
+    // UI Elements
     const statusText = document.getElementById("status-text");
     const lampWrapper = document.getElementById("lamp-wrapper");
     const mqttText = document.getElementById("mqtt-text");
     const mqttDot = document.getElementById("mqtt-dot");
     const mqttPill = document.getElementById("mqtt-status-pill");
-    const mainCard = document.getElementById("main-card");
 
-    const fullHistory = [];
-    const TOPIC_STATUS = "lampu/esp32_01/status";
-    const REDIRECT_URL = "https://teknikotomasiindustrinepan.github.io/agriot_classy/";
-
-    // Inisialisasi Chart.js
+    // Inisialisasi Chart
     const ctx = document.getElementById('activityChart').getContext('2d');
     const activityChart = new Chart(ctx, {
       type: 'line',
@@ -177,174 +75,209 @@
       }
     });
 
+    const fullHistory = [];
     function addDataToChart(status) {
       const now = new Date();
       const timeStr = now.toLocaleTimeString('id-ID');
-      const dateStr = now.toLocaleDateString('id-ID');
-      const val = status === "ON" ? 1 : 0;
-
-      fullHistory.push({ 
-        tanggal: dateStr, 
-        waktu: timeStr, 
-        topic: TOPIC_STATUS, 
-        status: status,
-        rawVal: val
-      });
-
+      const val = (status === "ON") ? 1 : 0;
+      fullHistory.push({ tanggal: now.toLocaleDateString('id-ID'), waktu: timeStr, status: status });
       activityChart.data.labels.push(timeStr);
       activityChart.data.datasets[0].data.push(val);
-
-      if (activityChart.data.labels.length > 10) {
+      if (activityChart.data.labels.length > 15) {
         activityChart.data.labels.shift();
         activityChart.data.datasets[0].data.shift();
       }
-      activityChart.update();
+      activityChart.update('none');
     }
 
-    function exportReport() {
-      if (fullHistory.length === 0) {
-        alert("Belum ada data history.");
-        return;
+    function updateUI(status) {
+      const finalStatus = (status.includes("ON")) ? "ON" : "OFF";
+      statusText.innerText = finalStatus;
+      if (finalStatus === "ON") {
+        statusText.classList.remove("text-white/20");
+        statusText.classList.add("text-amber-400", "drop-shadow-[0_0_12px_rgba(251,191,36,0.6)]");
+        lampWrapper.className = "bulb-container status-on";
+      } else {
+        statusText.classList.remove("text-amber-400", "drop-shadow-[0_0_12px_rgba(251,191,36,0.6)]");
+        statusText.classList.add("text-white/20");
+        lampWrapper.className = "bulb-container status-off";
       }
-
-      const labelsJson = JSON.stringify(fullHistory.map(h => h.waktu));
-      const dataJson = JSON.stringify(fullHistory.map(h => h.rawVal));
-      
-      let tableRows = "";
-      fullHistory.forEach(row => {
-        tableRows += `<tr style="border-bottom: 1px solid #ddd;">
-          <td style="padding: 10px;">${row.tanggal}</td>
-          <td style="padding: 10px;">${row.waktu}</td>
-          <td style="padding: 10px; font-family: monospace;">${row.topic}</td>
-          <td style="padding: 10px; font-weight: bold; color: ${row.status === 'ON' ? '#d97706' : '#64748b'}">${row.status}</td>
-        </tr>`;
-      });
-
-      const reportHtml = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <title>Report Smart Lamp AGRIOT V1.0</title>
-          <script src="https://cdn.jsdelivr.net/npm/chart.js"><\/script>
-          <style>
-            body { font-family: sans-serif; padding: 40px; color: #333; line-height: 1.6; }
-            .header { text-align: center; border-bottom: 2px solid #3b82f6; padding-bottom: 20px; margin-bottom: 30px; }
-            h1 { margin: 0; color: #1e3a8a; }
-            .chart-container { background: #f8fafc; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; margin-bottom: 40px; }
-            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-            th { background: #3b82f6; color: white; text-align: left; padding: 12px; }
-            .footer { margin-top: 50px; font-size: 12px; text-align: center; color: #94a3b8; }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <h1>Laporan Aktivitas Smart Lamp</h1>
-            <p>AGRIOT V1.0 - SMK Negeri 1 Japara</p>
-            <p style="font-size: 12px; color: #64748b;">Dicetak pada: ${new Date().toLocaleString('id-ID')}</p>
-          </div>
-          <div class="chart-container">
-            <h3>Grafik Aktivitas</h3>
-            <canvas id="reportChart" style="max-height: 300px;"></canvas>
-          </div>
-          <h3>Detail Log Data</h3>
-          <table>
-            <thead>
-              <tr>
-                <th>Tanggal</th>
-                <th>Waktu</th>
-                <th>Topic MQTT</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${tableRows}
-            </tbody>
-          </table>
-          <div class="footer">
-            &copy; 2024 AGRIOT System - SMK Negeri 1 Japara. Dokumen ini dibuat secara otomatis oleh sistem.
-          </div>
-          <script>
-            const ctx = document.getElementById('reportChart').getContext('2d');
-            new Chart(ctx, {
-              type: 'line',
-              data: {
-                labels: ${labelsJson},
-                datasets: [{
-                  label: 'Status (1=ON, 0=OFF)',
-                  data: ${dataJson},
-                  borderColor: '#3b82f6',
-                  backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                  stepped: true,
-                  fill: true,
-                  borderWidth: 2
-                }]
-              },
-              options: { scales: { y: { min: -0.1, max: 1.1, ticks: { stepSize: 1 } } } }
-            });
-          <\/script>
-        </body>
-        </html>`;
-
-      const blob = new Blob([reportHtml], { type: 'text/html' });
-      const link = document.createElement("a");
-      link.href = URL.createObjectURL(blob);
-      link.download = `Report_AGRIOT_${new Date().getTime()}.html`;
-      link.click();
+      addDataToChart(finalStatus);
     }
 
-    const options = { username: "mqtt_user", password: "mqtt_pass", protocol: "wss" };
-    const client = mqtt.connect("wss://broker.hivemq.com:8884/mqtt", options);
+    // 1. Inisialisasi Auth (WAJIB)
+    const initAuth = async () => {
+      try {
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+          await signInAnonymously(auth);
+        }
+      } catch (error) {
+        console.error("Auth Error:", error);
+      }
+    };
+    initAuth();
 
-    client.on("connect", function () {
+    onAuthStateChanged(auth, (user) => {
+      currentUser = user;
+      if (user) {
+        // 2. Ambil data terakhir dari Firebase (Path Sesuai Instruksi Anda)
+        const statusDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'lamp_status', 'latest');
+        
+        onSnapshot(statusDocRef, (docSnap) => {
+          if (docSnap.exists()) {
+            const data = docSnap.data();
+            if (!isSynced) {
+                statusText.classList.remove("sync-pulse");
+                isSynced = true;
+            }
+            if (data.status !== lastStatus) {
+                lastStatus = data.status;
+                updateUI(data.status);
+            }
+          }
+        }, (error) => console.error("Firestore Listen Error:", error));
+      }
+    });
+
+    // 3. Koneksi MQTT
+    const mqttOptions = { 
+        username: "mqtt_user", 
+        password: "mqtt_pass", 
+        protocol: "wss",
+        clientId: 'web_client_' + Math.random().toString(16).substr(2, 8)
+    };
+    const client = mqtt.connect("wss://broker.hivemq.com:8884/mqtt", mqttOptions);
+
+    client.on("connect", () => {
       mqttText.innerText = "MQTT Connected";
       mqttDot.classList.replace("bg-red-500", "bg-green-400");
       mqttPill.classList.replace("bg-red-500/20", "bg-green-500/20");
       mqttPill.classList.replace("text-red-300", "text-green-300");
       mqttPill.classList.replace("border-red-500/50", "border-green-500/50");
-      client.subscribe(TOPIC_STATUS);
+      client.subscribe(TOPIC_STATUS, { qos: 1 });
+      client.publish(TOPIC_CMD, "GET_STATUS", { qos: 1 });
     });
 
-    client.on("message", function (topic, message) {
+    client.on("message", async (topic, message) => {
+      const msg = message.toString().trim().toUpperCase();
       if (topic === TOPIC_STATUS) {
-        updateUI(message.toString().toUpperCase());
+        // 4. Cara Menambahkan Data ke Firebase (setDoc)
+        if (currentUser) {
+          // Mendefinisikan lokasi penyimpanan (Path Anda)
+          const statusDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'lamp_status', 'latest');
+          
+          // Mengirim data ke Firestore
+          await setDoc(statusDocRef, { 
+            status: msg, 
+            updatedAt: new Date().toISOString(),
+            deviceId: "ESP32_01"
+          }, { merge: true }); // 'merge: true' agar tidak menimpa field lain jika ada
+        }
       }
     });
 
-    function updateUI(status) {
-      statusText.innerText = status;
-      addDataToChart(status);
-      
-      if (status === "ON") {
-        statusText.classList.remove("text-white/20");
-        statusText.classList.add("text-amber-400", "drop-shadow-[0_0_12px_rgba(251,191,36,0.6)]");
-        lampWrapper.classList.replace("status-off", "status-on");
-      } else {
-        statusText.classList.remove("text-amber-400", "drop-shadow-[0_0_12px_rgba(251,191,36,0.6)]");
-        statusText.classList.add("text-white/20");
-        lampWrapper.classList.replace("status-on", "status-off");
-      }
-    }
-
-    function lampOn() { client.publish("lampu/esp32_01/cmd", "ON"); updateUI("ON"); }
-    function lampOff() { client.publish("lampu/esp32_01/cmd", "OFF"); updateUI("OFF"); }
-
-    client.on("error", (err) => { mqttText.innerText = "Connection Error"; });
-
-    // Fungsi Logout
-    function handleLogout() {
-      // Tambahkan efek transisi keluar
+    // Actions
+    window.lampOn = () => client.publish(TOPIC_CMD, "ON", { qos: 1 });
+    window.lampOff = () => client.publish(TOPIC_CMD, "OFF", { qos: 1 });
+    window.handleLogout = () => {
       document.body.classList.add("fade-out");
-      
-      // Tunggu animasi sebentar sebelum redirect
       setTimeout(() => {
-        // Disconnect MQTT client jika diperlukan
-        if (client.connected) {
-          client.end();
-        }
-        // Redirect
+        if (client.connected) client.end();
         window.location.href = REDIRECT_URL;
       }, 500);
-    }
+    };
+    window.exportReport = () => {
+        if (fullHistory.length === 0) return alert("Data kosong");
+        let csv = "Tanggal,Waktu,Status\n";
+        fullHistory.forEach(r => { csv += `${r.tanggal},${r.waktu},${r.status}\n`; });
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'log_lampu.csv';
+        a.click();
+    };
   </script>
+
+  <style>
+    :root { --on-color: #fbbf24; --off-color: #94a3b8; }
+    body {
+      background-image: linear-gradient(rgba(15, 23, 42, 0.85), rgba(15, 23, 42, 0.85)), 
+                        url('https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?ixlib=rb-4.0.3&auto=format&fit=crop&w=1920&q=80');
+      background-size: cover; background-position: center; background-attachment: fixed;
+      font-family: 'Inter', sans-serif; transition: all 0.3s ease;
+    }
+    .glass-morphism { background: rgba(255, 255, 255, 0.05); backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.1); }
+    .bulb-container { position: relative; width: 100px; height: 100px; margin: 0 auto 1.5rem; }
+    .status-on .bulb-glow { fill: var(--on-color); filter: drop-shadow(0 0 20px rgba(251, 191, 36, 1)); }
+    .status-off .bulb-glow { fill: rgba(226, 232, 240, 0.3); }
+    .sync-pulse { animation: pulse-blue 2s infinite; }
+    @keyframes pulse-blue { 0% { color: rgba(255, 255, 255, 0.2); } 50% { color: rgba(96, 165, 250, 0.5); } 100% { color: rgba(255, 255, 255, 0.2); } }
+    canvas { max-height: 180px; }
+    .fade-out { opacity: 0; transform: scale(0.9); transition: all 0.5s ease; }
+  </style>
+</head>
+<body class="flex flex-col items-center justify-center min-h-screen p-6 space-y-6">
+
+  <div class="fixed top-6 right-6 z-50">
+    <button onclick="handleLogout()" class="glass-morphism px-4 py-2 rounded-xl text-white text-xs font-bold flex items-center gap-2 hover:bg-red-500/20 hover:border-red-500/50 transition-all active:scale-95">
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+      </svg>
+      LOGOUT
+    </button>
+  </div>
+
+  <div id="main-card" class="glass-morphism rounded-3xl shadow-2xl p-8 w-full max-w-md text-center text-white relative overflow-hidden">
+    <header class="mb-6">
+      <h1 class="text-3xl font-black tracking-tight leading-tight">Smart Lamp <span class="text-blue-400 block text-xl">"AGRIOT V1.0"</span></h1>
+      <p class="text-xs font-semibold text-blue-200 mt-1 uppercase tracking-widest text-center">SMK Negeri 1 Japara</p>
+      
+      <div id="mqtt-status-pill" class="inline-flex items-center px-3 py-1 mt-4 rounded-full text-[10px] font-bold bg-red-500/20 text-red-300 border border-red-500/50 uppercase tracking-tighter">
+        <span id="mqtt-dot" class="w-2 h-2 mr-2 rounded-full bg-red-500 animate-pulse"></span>
+        <span id="mqtt-text">Connecting...</span>
+      </div>
+    </header>
+
+    <div id="lamp-wrapper" class="bulb-container status-off">
+      <svg class="bulb-svg" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path id="bulb-path" class="bulb-glow" d="M12,2A7,7,0,0,0,5,9c0,3.11,2.1,5.73,5,6.6V19a2,2,0,0,0,2,2,2,2,0,0,0,2-2V15.6c2.9-.87,5-3.49,5-6.6A7,7,0,0,0,12,2Z" fill="#e2e8f0"/>
+        <path class="bulb-glass" d="M9,21h6v1a1,1,0,0,1-1,1H10a1,1,0,0,1-1-1Z" fill="#94a3b8"/>
+      </svg>
+    </div>
+
+    <div class="mb-6">
+      <p class="text-blue-200 text-[10px] uppercase tracking-[0.2em] mb-1 opacity-60">Status Real-time</p>
+      <div id="status-text" class="text-4xl font-black text-white/20 sync-pulse uppercase">Syncing...</div>
+    </div>
+
+    <div class="grid grid-cols-2 gap-4 mb-6">
+      <button onclick="lampOn()" class="bg-blue-600 hover:bg-blue-500 active:scale-95 transition-all text-white text-sm font-bold py-4 rounded-2xl shadow-lg shadow-blue-900/50 border border-blue-400/30 uppercase tracking-widest">
+        ON
+      </button>
+      <button onclick="lampOff()" class="bg-white/5 hover:bg-white/10 active:scale-95 transition-all text-white text-sm font-bold py-4 rounded-2xl border border-white/10 uppercase tracking-widest">
+        OFF
+      </button>
+    </div>
+
+    <div class="mt-4 p-4 bg-black/30 rounded-2xl border border-white/5 text-center">
+      <div class="flex justify-between items-center mb-2">
+        <p class="text-[10px] text-blue-300 uppercase tracking-widest font-bold text-left">Aktivitas Terakhir</p>
+        <button onclick="exportReport()" class="flex items-center gap-1 text-[9px] bg-blue-500/20 hover:bg-blue-500/40 text-blue-300 px-2 py-1 rounded-md border border-blue-500/30 transition-all font-bold">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+          EXPORT REPORT
+        </button>
+      </div>
+      <canvas id="activityChart"></canvas>
+    </div>
+
+    <footer class="mt-6 pt-4 border-t border-white/5">
+      <p class="text-[10px] text-white/30 italic uppercase tracking-tighter">Industrial IoT Monitoring System</p>
+    </footer>
+  </div>
 </body>
 </html>
