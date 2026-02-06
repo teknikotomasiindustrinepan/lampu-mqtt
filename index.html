@@ -6,6 +6,7 @@
   <title>Smart Lamp - AGRIOT V1.0 - SMK Negeri 1 Japara</title>
   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     :root {
       --on-color: #fbbf24;
@@ -13,69 +14,63 @@
     }
 
     body {
-      /* Menggunakan gambar yang Anda unggah sebagai background */
-      background-image: linear-gradient(rgba(15, 23, 42, 0.8), rgba(15, 23, 42, 0.8)), 
+      background-image: linear-gradient(rgba(15, 23, 42, 0.85), rgba(15, 23, 42, 0.85)), 
                         url('https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?ixlib=rb-4.0.3&auto=format&fit=crop&w=1920&q=80');
       background-size: cover;
       background-position: center;
       background-attachment: fixed;
       transition: all 0.3s ease;
+      font-family: 'Inter', sans-serif;
+    }
+
+    .glass-morphism {
+      background: rgba(255, 255, 255, 0.05);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
     }
 
     .bulb-container {
       position: relative;
-      width: 120px;
-      height: 120px;
-      margin: 0 auto 2rem;
+      width: 100px;
+      height: 100px;
+      margin: 0 auto 1.5rem;
     }
 
     .bulb-svg {
       width: 100%;
       height: 100%;
-      transition: filter 0.3s ease, fill 0.3s ease;
+      transition: all 0.3s ease;
     }
 
-    /* Efek cahaya saat lampu ON */
     .status-on .bulb-glow {
       fill: var(--on-color);
       filter: drop-shadow(0 0 20px rgba(251, 191, 36, 1));
     }
 
-    .status-on .bulb-glass {
-      fill: #fef3c7;
-    }
-
     .status-off .bulb-glow {
-      fill: #e2e8f0;
-      opacity: 0.5;
+      fill: rgba(226, 232, 240, 0.3);
     }
 
-    .status-off .bulb-glass {
-      fill: #f1f5f9;
-    }
-
-    .glass-morphism {
-      background: rgba(255, 255, 255, 0.1);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-      border: 1px solid rgba(255, 255, 255, 0.2);
+    canvas {
+      max-height: 200px;
     }
   </style>
 </head>
-<body class="flex items-center justify-center min-h-screen p-4">
+<body class="flex flex-col items-center justify-center min-h-screen p-6 space-y-6">
 
-  <div class="glass-morphism rounded-3xl shadow-2xl p-8 w-full max-w-sm text-center text-white">
+  <!-- Card Utama -->
+  <div class="glass-morphism rounded-3xl shadow-2xl p-8 w-full max-w-md text-center text-white">
     <header class="mb-6">
       <h1 class="text-3xl font-black tracking-tight leading-tight">Smart Lamp <span class="text-blue-400 block text-xl">"AGRIOT V1.0"</span></h1>
       <p class="text-xs font-semibold text-blue-200 mt-1 uppercase tracking-widest">SMK Negeri 1 Japara</p>
       
-      <div id="mqtt-status-pill" class="inline-flex items-center px-3 py-1 mt-4 rounded-full text-xs font-medium bg-red-500/20 text-red-300 border border-red-500/50">
+      <div id="mqtt-status-pill" class="inline-flex items-center px-3 py-1 mt-4 rounded-full text-[10px] font-bold bg-red-500/20 text-red-300 border border-red-500/50 uppercase tracking-tighter">
         <span id="mqtt-dot" class="w-2 h-2 mr-2 rounded-full bg-red-500 animate-pulse"></span>
         <span id="mqtt-text">MQTT Disconnected</span>
       </div>
     </header>
 
-    <!-- Ilustrasi Lampu SVG -->
     <div id="lamp-wrapper" class="bulb-container status-off">
       <svg class="bulb-svg" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
         <path class="bulb-glow" d="M12,2A7,7,0,0,0,5,9c0,3.11,2.1,5.73,5,6.6V19a2,2,0,0,0,2,2,2,2,0,0,0,2-2V15.6c2.9-.87,5-3.49,5-6.6A7,7,0,0,0,12,2Z" fill="#e2e8f0"/>
@@ -83,22 +78,28 @@
       </svg>
     </div>
 
-    <div class="mb-8">
-      <p class="text-blue-200 text-xs uppercase tracking-widest mb-1 opacity-70">Status Saat Ini</p>
-      <div id="status-text" class="text-4xl font-black text-white/30 transition-all duration-300">OFF</div>
+    <div class="mb-6">
+      <p class="text-blue-200 text-[10px] uppercase tracking-[0.2em] mb-1 opacity-60">Status Real-time</p>
+      <div id="status-text" class="text-4xl font-black text-white/20">OFF</div>
     </div>
 
-    <div class="grid grid-cols-2 gap-4">
-      <button onclick="lampOn()" class="bg-blue-600 hover:bg-blue-500 active:scale-95 transition-all text-white font-bold py-4 rounded-2xl shadow-lg shadow-blue-900/50 border border-blue-400/30">
-        NYALAKAN
+    <div class="grid grid-cols-2 gap-4 mb-8">
+      <button onclick="lampOn()" class="bg-blue-600 hover:bg-blue-500 active:scale-95 transition-all text-white text-sm font-bold py-4 rounded-2xl shadow-lg shadow-blue-900/50 border border-blue-400/30 uppercase tracking-widest">
+        ON
       </button>
-      <button onclick="lampOff()" class="bg-white/10 hover:bg-white/20 active:scale-95 transition-all text-white font-bold py-4 rounded-2xl border border-white/10">
-        MATIKAN
+      <button onclick="lampOff()" class="bg-white/5 hover:bg-white/10 active:scale-95 transition-all text-white text-sm font-bold py-4 rounded-2xl border border-white/10 uppercase tracking-widest">
+        OFF
       </button>
     </div>
 
-    <footer class="mt-8 pt-6 border-t border-white/10">
-      <p class="text-[10px] text-white/40 italic">Industrial Control System • Topic: lampu/esp32_01</p>
+    <!-- Container Grafik -->
+    <div class="mt-4 p-4 bg-black/20 rounded-2xl border border-white/5">
+      <p class="text-[10px] text-left text-blue-300 uppercase tracking-widest mb-2 font-bold">Aktivitas Terakhir</p>
+      <canvas id="activityChart"></canvas>
+    </div>
+
+    <footer class="mt-6 pt-4 border-t border-white/5">
+      <p class="text-[10px] text-white/30 italic uppercase tracking-tighter">Industrial IoT Monitoring System</p>
     </footer>
   </div>
 
@@ -109,22 +110,80 @@
     const mqttDot = document.getElementById("mqtt-dot");
     const mqttPill = document.getElementById("mqtt-status-pill");
 
+    // Inisialisasi Chart.js
+    const ctx = document.getElementById('activityChart').getContext('2d');
+    const activityChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: [], // Akan diisi stempel waktu
+        datasets: [{
+          label: 'Status Lampu (1=ON, 0=OFF)',
+          data: [],
+          borderColor: '#60a5fa',
+          backgroundColor: 'rgba(96, 165, 250, 0.2)',
+          borderWidth: 2,
+          pointRadius: 3,
+          stepped: true, // Membuat grafik berundak (on/off digital)
+          fill: true,
+          tension: 0
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false }
+        },
+        scales: {
+          x: {
+            display: true,
+            grid: { display: false },
+            ticks: { color: 'rgba(255,255,255,0.3)', font: { size: 9 } }
+          },
+          y: {
+            min: -0.1,
+            max: 1.1,
+            ticks: {
+              stepSize: 1,
+              color: 'rgba(255,255,255,0.3)',
+              callback: function(value) { return value === 1 ? 'ON' : 'OFF'; }
+            },
+            grid: { color: 'rgba(255,255,255,0.05)' }
+          }
+        }
+      }
+    });
+
+    function addDataToChart(status) {
+      const now = new Date();
+      const timeStr = now.getHours() + ":" + now.getMinutes().toString().padStart(2, '0') + ":" + now.getSeconds().toString().padStart(2, '0');
+      const val = status === "ON" ? 1 : 0;
+
+      activityChart.data.labels.push(timeStr);
+      activityChart.data.datasets[0].data.push(val);
+
+      // Batasi hanya 10 data terakhir agar grafik tidak terlalu padat
+      if (activityChart.data.labels.length > 10) {
+        activityChart.data.labels.shift();
+        activityChart.data.datasets[0].data.shift();
+      }
+      activityChart.update();
+    }
+
     const options = {
       username: "mqtt_user",
       password: "mqtt_pass",
       protocol: "wss"
     };
 
-    const client = mqtt.connect(
-      "wss://broker.hivemq.com:8884/mqtt",
-      options
-    );
+    const client = mqtt.connect("wss://broker.hivemq.com:8884/mqtt", options);
 
     client.on("connect", function () {
       mqttText.innerText = "MQTT Connected";
       mqttDot.classList.replace("bg-red-500", "bg-green-400");
-      mqttPill.classList.remove("bg-red-500/20", "text-red-300", "border-red-500/50");
-      mqttPill.classList.add("bg-green-500/20", "text-green-300", "border-green-500/50");
+      mqttPill.classList.replace("bg-red-500/20", "bg-green-500/20");
+      mqttPill.classList.replace("text-red-300", "text-green-300");
+      mqttPill.classList.replace("border-red-500/50", "border-green-500/50");
       client.subscribe("lampu/esp32_01/status");
     });
 
@@ -136,13 +195,15 @@
 
     function updateUI(status) {
       statusText.innerText = status;
+      addDataToChart(status);
+      
       if (status === "ON") {
-        statusText.classList.remove("text-white/30");
-        statusText.classList.add("text-amber-400", "drop-shadow-[0_0_10px_rgba(251,191,36,0.5)]");
+        statusText.classList.remove("text-white/20");
+        statusText.classList.add("text-amber-400", "drop-shadow-[0_0_12px_rgba(251,191,36,0.6)]");
         lampWrapper.classList.replace("status-off", "status-on");
       } else {
-        statusText.classList.remove("text-amber-400", "drop-shadow-[0_0_10px_rgba(251,191,36,0.5)]");
-        statusText.classList.add("text-white/30");
+        statusText.classList.remove("text-amber-400", "drop-shadow-[0_0_12px_rgba(251,191,36,0.6)]");
+        statusText.classList.add("text-white/20");
         lampWrapper.classList.replace("status-on", "status-off");
       }
     }
@@ -159,7 +220,6 @@
 
     client.on("error", (err) => {
       mqttText.innerText = "Connection Error";
-      console.error(err);
     });
   </script>
 </body>
