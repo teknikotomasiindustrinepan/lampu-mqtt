@@ -2,66 +2,157 @@
 <html lang="id">
 <head>
   <meta charset="UTF-8">
-  <title>Kontrol Lampu ESP32</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Smart Home - ESP32 Light Control</title>
   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
   <style>
+    :root {
+      --bg-color: #f0f2f5;
+      --card-bg: #ffffff;
+      --primary: #3b82f6;
+      --on-color: #fbbf24;
+      --off-color: #94a3b8;
+    }
+
     body {
-      font-family: Arial, sans-serif;
-      text-align: center;
-      margin-top: 50px;
+      background-color: var(--bg-color);
+      transition: background-color 0.3s ease;
     }
-    button {
-      padding: 15px 30px;
-      font-size: 18px;
-      margin: 10px;
+
+    .bulb-container {
+      position: relative;
+      width: 120px;
+      height: 120px;
+      margin: 0 auto 2rem;
     }
-    #status {
-      font-weight: bold;
-      font-size: 20px;
+
+    .bulb-svg {
+      width: 100%;
+      height: 100%;
+      transition: filter 0.3s ease, fill 0.3s ease;
+    }
+
+    /* Efek cahaya saat lampu ON */
+    .status-on .bulb-glow {
+      fill: var(--on-color);
+      filter: drop-shadow(0 0 15px rgba(251, 191, 36, 0.8));
+    }
+
+    .status-on .bulb-glass {
+      fill: #fef3c7;
+    }
+
+    .status-off .bulb-glow {
+      fill: #e2e8f0;
+    }
+
+    .status-off .bulb-glass {
+      fill: #f1f5f9;
+    }
+
+    .btn-active {
+      transform: scale(0.95);
     }
   </style>
 </head>
-<body>
+<body class="flex items-center justify-center min-h-screen p-4">
 
-  <h1>Kontrol Lampu ESP32</h1>
+  <div class="bg-white rounded-3xl shadow-xl p-8 w-full max-w-sm text-center">
+    <header class="mb-6">
+      <h1 class="text-2xl font-bold text-gray-800">Smart Lamp</h1>
+      <div id="mqtt-status-pill" class="inline-flex items-center px-3 py-1 mt-2 rounded-full text-xs font-medium bg-red-100 text-red-700">
+        <span id="mqtt-dot" class="w-2 h-2 mr-2 rounded-full bg-red-500 animate-pulse"></span>
+        <span id="mqtt-text">MQTT Disconnected</span>
+      </div>
+    </header>
 
-  <button onclick="lampOn()">ON</button>
-  <button onclick="lampOff()">OFF</button>
+    <!-- Ilustrasi Lampu SVG -->
+    <div id="lamp-wrapper" class="bulb-container status-off">
+      <svg class="bulb-svg" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path class="bulb-glow" d="M12,2A7,7,0,0,0,5,9c0,3.11,2.1,5.73,5,6.6V19a2,2,0,0,0,2,2,2,2,0,0,0,2-2V15.6c2.9-.87,5-3.49,5-6.6A7,7,0,0,0,12,2Z" fill="#e2e8f0"/>
+        <path class="bulb-glass" d="M9,21h6v1a1,1,0,0,1-1,1H10a1,1,0,0,1-1-1Z" fill="#94a3b8"/>
+      </svg>
+    </div>
 
-  <p>Status Lampu: <span id="status">-</span></p>
-  <p>Status MQTT: <span id="mqtt">Disconnected</span></p>
+    <div class="mb-8">
+      <p class="text-gray-500 text-sm uppercase tracking-widest mb-1">Status Saat Ini</p>
+      <div id="status-text" class="text-3xl font-black text-gray-400">OFF</div>
+    </div>
 
-<script>
-  const options = {
-    username: "mqtt_user",
-    password: "mqtt_pass",
-    protocol: "wss"
-  };
+    <div class="grid grid-cols-2 gap-4">
+      <button onclick="lampOn()" class="bg-blue-500 hover:bg-blue-600 active:scale-95 transition-all text-white font-bold py-4 rounded-2xl shadow-lg shadow-blue-200">
+        NYALAKAN
+      </button>
+      <button onclick="lampOff()" class="bg-gray-100 hover:bg-gray-200 active:scale-95 transition-all text-gray-600 font-bold py-4 rounded-2xl">
+        MATIKAN
+      </button>
+    </div>
 
-  const client = mqtt.connect(
-    "wss://broker.hivemq.com:8884/mqtt",
-    options
-  );
+    <footer class="mt-8 pt-6 border-t border-gray-100">
+      <p class="text-xs text-gray-400 italic">Topic: lampu/esp32_01</p>
+    </footer>
+  </div>
 
-  client.on("connect", function () {
-    document.getElementById("mqtt").innerText = "Connected";
-    client.subscribe("lampu/esp32_01/status");
-  });
+  <script>
+    const statusText = document.getElementById("status-text");
+    const lampWrapper = document.getElementById("lamp-wrapper");
+    const mqttText = document.getElementById("mqtt-text");
+    const mqttDot = document.getElementById("mqtt-dot");
+    const mqttPill = document.getElementById("mqtt-status-pill");
 
-  client.on("message", function (topic, message) {
-    if (topic === "lampu/esp32_01/status") {
-      document.getElementById("status").innerText = message.toString();
+    const options = {
+      username: "mqtt_user",
+      password: "mqtt_pass",
+      protocol: "wss"
+    };
+
+    const client = mqtt.connect(
+      "wss://broker.hivemq.com:8884/mqtt",
+      options
+    );
+
+    client.on("connect", function () {
+      mqttText.innerText = "MQTT Connected";
+      mqttDot.classList.replace("bg-red-500", "bg-green-500");
+      mqttPill.classList.replace("bg-red-100", "text-red-700");
+      mqttPill.classList.add("bg-green-100", "text-green-700");
+      client.subscribe("lampu/esp32_01/status");
+    });
+
+    client.on("message", function (topic, message) {
+      if (topic === "lampu/esp32_01/status") {
+        updateUI(message.toString().toUpperCase());
+      }
+    });
+
+    function updateUI(status) {
+      statusText.innerText = status;
+      if (status === "ON") {
+        statusText.classList.replace("text-gray-400", "text-amber-500");
+        lampWrapper.classList.replace("status-off", "status-on");
+      } else {
+        statusText.classList.replace("text-amber-500", "text-gray-400");
+        lampWrapper.classList.replace("status-on", "status-off");
+      }
     }
-  });
 
-  function lampOn() {
-    client.publish("lampu/esp32_01/cmd", "ON");
-  }
+    function lampOn() {
+      client.publish("lampu/esp32_01/cmd", "ON");
+      // Optimistic update (opsional, bisa menunggu feedback dari MQTT)
+      updateUI("ON");
+    }
 
-  function lampOff() {
-    client.publish("lampu/esp32_01/cmd", "OFF");
-  }
-</script>
+    function lampOff() {
+      client.publish("lampu/esp32_01/cmd", "OFF");
+      // Optimistic update
+      updateUI("OFF");
+    }
 
+    client.on("error", (err) => {
+      mqttText.innerText = "Connection Error";
+      console.error(err);
+    });
+  </script>
 </body>
 </html>
